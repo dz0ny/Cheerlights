@@ -1,6 +1,13 @@
+CheerLights for eLua
+====================
 
+Build:
 
+    lua build_elua.lua board=EK-LM3S6965 romfs=compile
 
+Flash:
+
+    openocd -f flash.cfg
 
 eLua - Lua for microcontrollers
 ----------------
