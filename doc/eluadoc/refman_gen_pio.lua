@@ -10,12 +10,12 @@ data_en =
   menu_name = "pio",
 
   -- Overview
-  overview = [[This module contains functions for accessing the CPU's PIO (Programmable Input Output) pins. It contains two sets of functions with identical
+  overview = [[This module contains functions for accessing the CPU's PIO (Programmable Input Output) pins. It contains two set of functions with identical
   names and behaviour. One set groups the functions used to access individual pins from ports, the other groups the functions used to access full ports.</p>
-  <p>With the $pio$ module, you specify names of $ports$ as they appear in your eLua's CPU datasheet. For example, if your CPU's ports are named $PA, PB$ 
-  and $PC$, you can refer to them using $pio.PA$, $pio.PB$ and $pio.PC$, respectively. If your CPU uses $P0$, $P1$, $P2$ instead of $PA$, $PB$ and $PC$, 
+  <p>With the $pio$ module, you specifiy names of $ports$ as they appear in your eLua's CPU datasheet. For example, if your CPU's ports are named $PA, PB$ 
+  and $PC$, you can reffer to them using $pio.PA$, $pio.PB$ and $pio.PC$, respectively. If your CPU uses $P0$, $P1$, $P2$ instead of $PA$, $PB$ and $PC$, 
   you can simply use $pio.P0$, $pio.P1$ and $pio.P2$ instead.</p>
-  <p>You can also refer to individual $pins$ instead of ports. With the same notation as above, $pio.PA_0$ refers to the first pin of port $PA$, 
+  <p>You can also reffer to individual $pins$ instead of ports. With the same notation as above, $pio.PA_0$ refers to the first pin of port $PA$, 
   $P0_15$ refers to the 16th pin of port $P0$ and so on.
   ]],
 
@@ -150,6 +150,19 @@ data_en =
         "$port2 (optional)$ - the second port",
         "$portn (optional)$ - the %n%-th port"
       }
+    },
+
+    { sig = "port, pin = #pio.decode#( resnum )",
+      desc = "Convert a PIO resource number to the corresponding port and pin. This is most commonly used in GPIO edge interrupt routines to convert the Lua interrupt routine's argument to the port and pin that caused the interrupt but it can also be used on the values returned by the pin names pio.PA_0, pio.P2_15 and so on.",
+      args =
+      {
+        "$resnum$ - the resource number of the pin",
+      },
+      ret =
+      {
+        "$port$ - the index of the port, starting from 0 (so port A is 0, port B is 1 and so on)",
+        "$pin$ - the pin number, usually from 0 to 31",
+      },
     },
    
   }

@@ -41,6 +41,13 @@
 #include "pwm.h"
 #include "i2c.h"
 
+#ifdef  BUILD_USB_CDC
+#if !defined( VTMR_NUM_TIMERS ) || VTMR_NUM_TIMERS == 0
+# error "On AVR32, USB_CDC needs virtual timer support. Define VTMR_NUM_TIMERS > 0."
+#endif
+#include "usb-cdc.h"
+#endif
+
 #ifdef BUILD_UIP
 
 // UIP sys tick data
@@ -130,8 +137,6 @@ const u32 uart_base_addr[ ] = {
 #endif
 };
 
-extern void alloc_init();
-
 int platform_init()
 {
   pm_freq_param_t pm_freq_param =
@@ -180,6 +185,10 @@ int platform_init()
   pm_enable_clk32_no_wait( &AVR32_PM, AVR32_PM_OSCCTRL32_STARTUP_0_RCOSC );
 #endif
 
+#ifdef BUILD_USB_CDC
+  pm_configure_usb_clock();
+#endif
+
   // Initialize external memory if any.
 #ifdef AVR32_SDRAMC
 # ifndef BOOTLOADER_EMBLOD
@@ -198,20 +207,6 @@ int platform_init()
 #endif
   }
 
-  // Setup spi controller(s) : up to 4 slave by controller.
-#if NUM_SPI > 0
-  spi_master_options_t spiopt;
-  spiopt.modfdis = TRUE;
-  spiopt.pcs_decode = FALSE;
-  spiopt.delay = 0;
-  spi_initMaster(&AVR32_SPI0, &spiopt, REQ_PBA_FREQ);
-
-#if NUM_SPI > 4
-  spi_initMaster(&AVR32_SPI1, &spiopt, REQ_PBA_FREQ);
-#endif
-
-#endif
-
 #ifdef BUILD_ADC
   (&AVR32_ADC)->ier = AVR32_ADC_DRDY_MASK;
   INTC_register_interrupt( &adc_int_handler, AVR32_ADC_IRQ, AVR32_INTC_INT0);
@@ -225,7 +220,7 @@ int platform_init()
 #endif
 
 #ifdef BUILD_UIP
-    platform_ethernet_setup();
+  platform_ethernet_setup();
 #endif
 
 #ifdef ELUA_BOARD_MIZAR32
@@ -246,10 +241,13 @@ int platform_init()
 
   // Setup virtual timers if needed
 #if VTMR_NUM_TIMERS > 0
-#define VTMR_CH               2
   platform_cpu_set_interrupt( INT_TMR_MATCH, VTMR_CH, PLATFORM_CPU_ENABLE );
   platform_timer_set_match_int( VTMR_CH, 1000000 / VTMR_FREQ_HZ, PLATFORM_TIMER_INT_CYCLIC );
 #endif // #if VTMR_NUM_TIMERS > 0
+
+#ifdef BUILD_USB_CDC
+  usb_init();
+#endif
 
   cmn_platform_init();
 
@@ -356,6 +354,13 @@ u32 platform_uart_setup( unsigned id, u32 baud, int databits, int parity, int st
   opts.baudrate = baud;
 
   // Set stopbits
+#if PLATFORM_UART_STOPBITS_1 == USART_1_STOPBIT && \
+    PLATFORM_UART_STOPBITS_1_5 == USART_1_5_STOPBIT && \
+    PLATFORM_UART_STOPBITS_2 == USART_2_STOPBIT
+  // The AVR32 header values and the eLua values are the same (0, 1, 2)
+  if (stopbits > PLATFORM_UART_STOPBITS_2) return 0;
+  opts.stopbits = stopbits;
+#else
   switch (stopbits) {
   case PLATFORM_UART_STOPBITS_1:
     opts.stopbits = USART_1_STOPBIT;
@@ -369,6 +374,7 @@ u32 platform_uart_setup( unsigned id, u32 baud, int databits, int parity, int st
   default:
     return 0;
   }
+#endif
 
   // Set parity
   switch (parity) {
@@ -663,9 +669,38 @@ u32 spireg[] =
 #endif
 };
 
+// Enabling of the SPI clocks is deferred until platform_spi_setup() is called
+// for the first time so that, if you don't use the SPI ports and don't
+// have MMCFS enabled, power consumption is reduced.
+
+// Initialise the specified SPI controller (== id / 4) as a master
+static void spi_init_master( unsigned controller )
+{
+  static const spi_master_options_t spiopt = {
+    .modfdis = TRUE,
+    .pcs_decode = FALSE,
+    .delay = 0,
+  };
+  static bool spi_is_master[ (NUM_SPI + 3) / 4];  // initialized as 0
+
+  if ( ! spi_is_master[controller] ) {
+    spi_initMaster(
+#if NUM_SPI <= 4
+                   &AVR32_SPI0,
+#else
+		   &AVR32_SPI0 + ( controller * ( &AVR32_SPI1 - &AVR32_SPI0 ) ),
+#endif
+                   &spiopt, REQ_PBA_FREQ);
+    spi_is_master[controller]++;
+  }
+}
+
 u32 platform_spi_setup( unsigned id, int mode, u32 clock, unsigned cpol, unsigned cpha, unsigned databits )
 {
+#if NUM_SPI > 0
   spi_options_t opt;
+
+  spi_init_master(id >> 2);
 
   opt.baudrate = clock;
   opt.bits = min(databits, 16);
@@ -677,6 +712,9 @@ u32 platform_spi_setup( unsigned id, int mode, u32 clock, unsigned cpol, unsigne
   gpio_enable_module(spi_pins + (id >> 2) * 4, 4);
   return spi_setupChipReg((volatile avr32_spi_t *) spireg[id >> 2], id % 4,
                           &opt, REQ_PBA_FREQ);
+#else
+  return 0;
+#endif
 }
 
 spi_data_type platform_spi_send_recv( unsigned id, spi_data_type data )
@@ -1147,6 +1185,46 @@ void platform_eth_timer_handler()
 
 #endif // #ifdef BUILD_UIP
 
+#ifdef BUILD_USB_CDC
+
+void platform_usb_cdc_send( u8 data )
+{
+  if (!Is_device_enumerated())
+    return;
+  while(!UsbCdcTxReady());      // "USART"-USB free ?
+  UsbCdcSendChar(data);
+}
+int platform_usb_cdc_recv( s32 timeout )
+{
+  int data;
+  int read;
+
+  if (!Is_device_enumerated())
+    return -1;
+
+  // Try to read one byte from buffer, if none available return -1 or
+  // retry forever if timeout != 0 ( = PLATFORM_TIMER_INF_TIMEOUT)
+  do {
+    read = UsbCdcReadChar(&data);
+  } while( read == 0 && timeout != 0 );
+
+  if( read == 0 )
+    return -1;
+  else
+    return data;
+}
+
+void platform_cdc_timer_handler()
+{
+  usb_device_task();
+  UsbCdcFlush ();
+}
+#else
+void platform_cdc_timer_handler()
+{
+}
+#endif // #ifdef BUILD_USB_CDC
+
 // ****************************************************************************
 // Platform specific modules go here
 
@@ -1158,12 +1236,22 @@ void platform_eth_timer_handler()
 #include "lrotable.h"
 #include "lrodefs.h"
 
+#ifdef BUILD_LCD
 extern const LUA_REG_TYPE lcd_map[];
+#endif
+#ifdef BUILD_RTC
+extern const LUA_REG_TYPE rtc_map[];
+#endif
 
 const LUA_REG_TYPE platform_map[] =
 {
 #if LUA_OPTIMIZE_MEMORY > 0
+# ifdef BUILD_LCD
   { LSTRKEY( "lcd" ), LROVAL( lcd_map ) },
+# endif
+# ifdef BUILD_RTC
+  { LSTRKEY( "rtc" ), LROVAL( rtc_map ) },
+# endif
 #endif
   { LNILKEY, LNILVAL }
 };
@@ -1176,9 +1264,16 @@ LUALIB_API int luaopen_platform( lua_State *L )
   luaL_register( L, PS_LIB_TABLE_NAME, platform_map );
 
   // Setup the new tables inside platform table
+# ifdef BUILD_LCD
   lua_newtable( L );
   luaL_register( L, NULL, lcd_map );
   lua_setfield( L, -2, "lcd" );
+# endif
+# ifdef BUILD_RTC
+  lua_newtable( L );
+  luaL_register( L, NULL, rtc_map );
+  lua_setfield( L, -2, "rtc" );
+# endif
 
   return 1;
 #endif // #if LUA_OPTIMIZE_MEMORY > 0
