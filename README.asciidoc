@@ -3,7 +3,8 @@ CheerLights for eLua
 
 Build:
 
-    lua build_elua.lua board=EK-LM3S6965 romfs=compile
+     export PATH=/opt/arm-eabi/bin:$PATH
+     scons board=EK-LM3S6965 target=lua romfs=compile toolchain=codesourcery
 
 Flash:
 
