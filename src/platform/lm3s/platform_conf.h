@@ -15,11 +15,11 @@
 // *****************************************************************************
 // Define here what components you want for this platform
 //#if !defined( ELUA_BOARD_SOLDERCORE )
-  #define BUILD_XMODEM
+//  #define BUILD_XMODEM
   #define BUILD_TERM
 //#endif
 
-#define BUILD_SHELL
+//#define BUILD_SHELL
 #define BUILD_ROMFS
 #ifndef ELUA_BOARD_EKLM3S9D92
 #define BUILD_MMCFS
@@ -38,17 +38,17 @@
 #define BUILD_LINENOISE
 
 #define BUILD_ADC
-#define BUILD_RPC
+//#define BUILD_RPC
 //#if defined( ELUA_BOARD_SOLDERCORE )
 //  #define BUILD_CON_TCP
 //#else
   #define BUILD_CON_GENERIC
 //#endif
 #define BUILD_C_INT_HANDLERS
-#ifdef ELUA_BOARD_EKLM3S9D92
+
 #define BUILD_LUA_INT_HANDLERS
 #define PLATFORM_INT_QUEUE_LOG_SIZE 5
-#endif
+
 
 #define PLATFORM_HAS_SYSTIMER
 #define PLATFORM_TMR_COUNTS_DOWN
